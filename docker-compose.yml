@@ -1,0 +1,45 @@
+services:
+  github-fork-syncer:
+    build:
+      context: https://github.com/dynacylabs/github_fork_syncer.git
+      dockerfile: Dockerfile
+    container_name: github-fork-syncer
+    restart: unless-stopped
+    environment:
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GITHUB_USERNAME=${GITHUB_USERNAME:-}
+      - GITHUB_USERNAMES=${GITHUB_USERNAMES:-}
+      - REPO_BASE_DIR=${REPO_BASE_DIR:-/app/repos}
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-0 0 * * *}
+    volumes:
+      # Mount a volume for the repositories to persist data
+      - fork_repos:/app/repos
+      # Mount logs directory to access cron logs from host
+      - ./logs:/var/log
+      # Mount usernames.txt file if it exists
+      - ./usernames.txt:/app/usernames.txt:ro
+    networks:
+      - fork-syncer-network
+    healthcheck:
+      test: ["CMD", "ps", "aux", "|", "grep", "-v", "grep", "|", "grep", "crond"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  fork_repos:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOST_REPOS_PATH:-./repos}
+
+networks:
+  fork-syncer-network:
+    driver: bridge
