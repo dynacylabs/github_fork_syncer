@@ -1,7 +1,7 @@
 FROM alpine:latest
 
-# Install Git, Cron, Curl, and jq
-RUN apk add --no-cache git curl jq
+# Install Git, Cron, Curl, jq, and bash
+RUN apk add --no-cache git curl jq bash
 
 # Create necessary directories
 RUN mkdir -p /var/log /app

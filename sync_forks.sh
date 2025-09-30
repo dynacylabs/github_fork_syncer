@@ -7,7 +7,7 @@ if [ -z "${GITHUB_TOKEN}" ]; then
 fi
 
 # Set the base directory for repositories (can be overridden by environment variable)
-BASE_REPO_DIR="${REPO_BASE_DIR:-}"
+BASE_REPO_DIR="${REPO_BASE_DIR:-/app/repos}"
 
 # Create the base directory if it doesn't exist
 mkdir -p "$BASE_REPO_DIR"
