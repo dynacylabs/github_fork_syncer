@@ -9,9 +9,10 @@ RUN mkdir -p /var/log /app
 # Copy scripts into the container
 COPY sync_forks.sh /usr/local/bin/sync_forks.sh
 COPY entrypoint.sh /entrypoint.sh
+COPY healthcheck.sh /usr/local/bin/healthcheck.sh
 
 # Make scripts executable
-RUN chmod +x /usr/local/bin/sync_forks.sh /entrypoint.sh
+RUN chmod +x /usr/local/bin/sync_forks.sh /entrypoint.sh /usr/local/bin/healthcheck.sh
 
 # Copy usernames.txt if it exists (optional)
 COPY usernames.txt* /app/

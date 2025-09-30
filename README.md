@@ -1,98 +1,150 @@
 # GitHub Fork Syncer
 
-A simple, automated solution to keep your GitHub forks in sync with their upstream repositories using Docker and cron scheduling.
+A powerful, automated solution to keep your GitHub forks in sync with their upstream repositories. Features multi-user support, comprehensive branch synchronization, and containerized deployment with Docker.
 
 ## Overview
 
-GitHub Fork Syncer automatically synchronizes your forked repositories with their upstream sources. It uses the GitHub API to discover your forks and their upstream repositories, then performs git operations to merge the latest changes from upstream into your forks.
+GitHub Fork Syncer automatically synchronizes your forked repositories with their upstream sources across multiple GitHub accounts. It uses the GitHub API to discover forks and their upstream repositories, then performs intelligent git operations to merge the latest changes from upstream into your forks.
 
-## Features
+## ✨ Features
 
-- 🔄 **Automatic synchronization** of all your GitHub forks
-- 📅 **Configurable cron scheduling** for regular updates
-- 🐳 **Docker containerized** for easy deployment
-- 🔍 **Upstream detection** using GitHub API
-- 🌿 **Smart branch handling** respects default branch settings
-- 📊 **Logging support** for monitoring sync operations
+- 🔄 **Multi-branch synchronization** - Sync all branches, not just the default
+- 👥 **Multi-user support** - Manage forks across multiple GitHub accounts/organizations
+- 📅 **Configurable cron scheduling** for automated updates
+- 🐳 **Docker containerized** with health checks for reliable deployment
+- 🔍 **Smart upstream detection** using GitHub API
+- 🌿 **Intelligent branch handling** with pattern matching and conflict resolution
+- 📊 **Comprehensive logging** and progress reporting
+- 🛡️ **Safe operations** with force-with-lease and conflict handling
+- ⚙️ **Flexible configuration** via environment variables or files
+- 🏗️ **Auto-directory creation** and repository cloning
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Docker installed on your system
+- Docker and Docker Compose
 - GitHub Personal Access Token with `repo` permissions
 
-### 1. Clone the Repository
+### 1. Clone and Configure
 
 ```bash
 git clone https://github.com/dynacylabs/github_fork_syncer.git
 cd github_fork_syncer
-```
-
-### 2. Configure Environment Variables
-
-Copy the example environment file and configure your settings:
-
-```bash
 cp example.env .env
 ```
 
-Edit `.env` file:
-```plaintext
+### 2. Edit Configuration
+
+Edit `.env` file with your settings:
+```bash
 GITHUB_TOKEN=your_github_personal_access_token
-CRON_SCHEDULE="0 0 * * *"  # Daily at midnight
+GITHUB_USERNAMES=user1,user2,organization1
+SYNC_MODE=all
+CRON_SCHEDULE="0 0 * * *"
 ```
 
-### 3. Update Configuration
-
-Edit `sync_forks.sh` to configure your settings:
+### 3. Deploy with Docker Compose
 
 ```bash
-# Update line 8 with your GitHub username
-GITHUB_USERNAME="your-username"
-
-# Update line 22 with your local repositories path
-REPO_DIR="/path/to/your/forks/$REPO"
+docker-compose up -d
 ```
 
-### 4. Build and Run with Docker
+### 4. Monitor Progress
 
 ```bash
-# Build the Docker image
-docker build -t github-fork-syncer .
+# Check container status
+docker ps
 
-# Run the container
-docker run -d \
-  --name fork-syncer \
-  --env-file .env \
-  -v /path/to/your/forks:/path/to/your/forks \
-  github-fork-syncer
+# View real-time logs
+docker logs -f github-fork-syncer
+
+# Check cron execution logs
+docker exec github-fork-syncer tail -f /var/log/cron.log
 ```
 
-## Manual Usage
+## 🎯 Branch Synchronization Modes
 
-You can also run the sync script manually:
-
+### **All Branches (Default)**
+Syncs every branch from upstream to your fork:
 ```bash
-export GITHUB_TOKEN=your_token
-./sync_forks.sh
+SYNC_MODE=all
+CREATE_NEW_BRANCHES=true
+```
+- ✅ Syncs all existing branches
+- ✅ Creates new branches from upstream
+- ✅ Comprehensive coverage
+
+### **Default Branch Only**
+Legacy mode - syncs only the main/master branch:
+```bash
+SYNC_MODE=default
+```
+- ✅ Fast and lightweight
+- ✅ Minimal risk
+
+### **Selective Patterns**
+Sync only branches matching specific patterns:
+```bash
+SYNC_MODE=selective
+SYNC_BRANCHES="main,develop,feature/*,release/*"
+```
+- ✅ Configurable with wildcards
+- ✅ Fine-grained control
+
+## 👥 Multi-User Configuration
+
+### Method 1: Environment Variables (Recommended)
+```bash
+# Multiple users
+GITHUB_USERNAMES="dynacylabs,octocat,myorg"
+
+# Single user (legacy)
+GITHUB_USERNAME="dynacylabs"
 ```
 
-## Configuration
+### Method 2: Command Line
+```bash
+./sync_forks.sh user1 user2 user3
+```
 
-### Environment Variables
+### Method 3: usernames.txt File
+```txt
+# Add one username per line
+dynacylabs
+octocat
+myorganization
+```
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `GITHUB_TOKEN` | GitHub Personal Access Token with repo permissions | - | ✅ |
-| `CRON_SCHEDULE` | Cron expression for scheduling sync operations | `"0 0 * * *"` | ❌ |
+### Method 4: Docker Compose
+```yaml
+environment:
+  - GITHUB_USERNAMES=user1,user2,user3
+  - SYNC_MODE=all
+```
 
-### Script Configuration
+## ⚙️ Configuration Reference
 
-The `sync_forks.sh` script requires manual configuration of:
+### Core Environment Variables
 
-- **GitHub Username**: Update `GITHUB_USERNAME` variable with your GitHub username
-- **Local Repository Path**: Update `REPO_DIR` with the path where your forked repositories are stored locally
+| Variable | Description | Default | Options |
+|----------|-------------|---------|---------|
+| `GITHUB_TOKEN` | GitHub Personal Access Token | - | **Required** |
+| `GITHUB_USERNAMES` | Comma/space separated usernames | - | `user1,user2,user3` |
+| `SYNC_MODE` | Branch synchronization mode | `all` | `default`, `all`, `selective` |
+| `SYNC_BRANCHES` | Branch patterns (selective mode) | `main,master,develop,dev,feature/*,release/*` | Comma-separated patterns |
+| `CREATE_NEW_BRANCHES` | Create new upstream branches | `true` | `true`, `false` |
+| `REPO_BASE_DIR` | Local repository storage path | `/app/repos` | Any valid path |
+| `CRON_SCHEDULE` | Automated sync schedule | `0 0 * * *` | Valid cron expression |
+
+### Branch Pattern Examples
+
+| Pattern | Description |
+|---------|-------------|
+| `main,master` | Exact branch names |
+| `feature/*,bugfix/*` | Wildcard patterns |
+| `main,dev*,release/*` | Mixed exact and wildcards |
+| `develop,staging,feature/auth` | Specific branches |
 
 ### Cron Schedule Examples
 
@@ -100,97 +152,264 @@ The `sync_forks.sh` script requires manual configuration of:
 |----------|-------------|
 | `"0 0 * * *"` | Daily at midnight |
 | `"0 */6 * * *"` | Every 6 hours |
-| `"0 0 * * 1"` | Weekly on Monday |
-| `"0 0 1 * *"` | Monthly on the 1st |
+| `"0 2 * * 1-5"` | Weekdays at 2 AM |
+| `"0 0 * * 0"` | Weekly on Sunday |
 
-## How It Works
+## 🐳 Docker Deployment
 
-1. **Discovery**: Uses GitHub API to fetch all your forked repositories
-2. **Analysis**: Identifies upstream repository and default branch for each fork
-3. **Synchronization**: For each fork:
-   - Adds upstream remote if not present
-   - Fetches latest changes from upstream
-   - Merges upstream changes into the default branch
-   - Pushes updates to your fork
+### Using Docker Compose (Recommended)
 
-## Repository Structure
-
-```
-.
-├── Dockerfile          # Docker configuration
-├── sync_forks.sh      # Main synchronization script
-├── example.env        # Environment variables template
-└── README.md          # This file
+1. **Configure environment**:
+```bash
+cp example.env .env
+# Edit .env with your settings
 ```
 
-## Requirements
+2. **Deploy**:
+```bash
+docker-compose up -d
+```
 
-### System Requirements
-- Docker (for containerized deployment)
-- Git (if running locally)
-- curl and jq (if running locally)
+3. **Monitor**:
+```bash
+docker logs -f github-fork-syncer
+```
 
-### GitHub Token Permissions
-Your GitHub Personal Access Token needs the following scopes:
-- `repo` - Full control of private repositories
-- `public_repo` - Access to public repositories
-
-## Logging
-
-Container logs can be viewed using:
+### Using Docker Run
 
 ```bash
-docker logs fork-syncer
+docker run -d \
+  --name github-fork-syncer \
+  -e GITHUB_TOKEN="your_token" \
+  -e GITHUB_USERNAMES="user1,user2" \
+  -e SYNC_MODE="all" \
+  -e CRON_SCHEDULE="0 0 * * *" \
+  -v ./repos:/app/repos \
+  github-fork-syncer
 ```
 
-For more detailed logging, you can also check the cron logs inside the container:
+### Health Monitoring
+
+The container includes comprehensive health checks:
 
 ```bash
-docker exec fork-syncer tail -f /var/log/cron.log
+# Check health status
+docker ps
+# STATUS should show "healthy"
+
+# View health check details
+docker inspect github-fork-syncer --format='{{.State.Health.Status}}'
+
+# Manual health check
+docker exec github-fork-syncer /usr/local/bin/healthcheck.sh
 ```
 
-## Troubleshooting
+## 🔧 Manual Usage
 
-### Common Issues
+### Quick Test Run
+```bash
+export GITHUB_TOKEN="your_token"
+export GITHUB_USERNAMES="user1,user2"
+export SYNC_MODE="all"
+./sync_forks.sh
+```
 
-**Authentication Error**
-- Verify your `GITHUB_TOKEN` is correct and has proper permissions
-- Ensure the token hasn't expired
+### Local Development
+```bash
+# Install dependencies (Alpine/Ubuntu)
+sudo apk add git curl jq bash  # Alpine
+sudo apt-get install git curl jq bash  # Ubuntu
 
-**Repository Not Found**
-- Check that the `REPO_DIR` path is correctly configured
-- Ensure your local repositories exist and are properly initialized
+# Run locally
+chmod +x sync_forks.sh
+./sync_forks.sh
+```
 
-**Permission Denied**
-- Verify you have write access to your forked repositories
-- Check that your GitHub token has the necessary permissions
+## 🔍 Advanced Troubleshooting
+
+### Common Issues & Solutions
+
+#### 1. Authentication Errors
+```bash
+# Verify token validity
+curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
+
+# Test repository access
+curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/repos/user/repo
+```
+
+#### 2. Docker Health Check Failing
+```bash
+# Check container status
+docker logs github-fork-syncer
+
+# Verify internal processes
+docker exec github-fork-syncer ps aux | grep cron
+
+# Run manual health check
+docker exec github-fork-syncer /usr/local/bin/healthcheck.sh
+```
+
+#### 3. Repository Sync Issues
+- **Not a fork**: Verify repository is actually a fork (not original)
+- **Upstream access**: Check if upstream repository is accessible
+- **Branch mismatch**: Ensure target branches exist on upstream
+- **Pattern mismatch**: Review sync patterns in selective mode
+
+#### 4. Rate Limiting
+```bash
+# Check API rate limit status
+curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/rate_limit
+```
 
 ### Debug Mode
 
-To run the script in debug mode, add debugging to the script:
-
+Enable verbose logging:
 ```bash
-#!/bin/bash
-set -x  # Enable debug mode
-# ... rest of the script
+# Docker environment
+docker run -e DEBUG=true github-fork-syncer
+
+# Manual execution
+DEBUG=true ./sync_forks.sh
 ```
 
-## Contributing
+### Log Analysis
 
-1. Fork this repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+```bash
+# Real-time monitoring
+docker logs -f github-fork-syncer
 
-## License
+# Error filtering
+docker logs github-fork-syncer 2>&1 | grep -i error
 
-This project is open source. Feel free to use, modify, and distribute as needed.
+# User-specific logs
+docker logs github-fork-syncer 2>&1 | grep "Processing user:"
+```
 
-## Security Note
+## 📊 Monitoring & Metrics
 
-⚠️ **Important**: Never commit your actual GitHub token to version control. Always use environment variables or secure secret management systems.
+### Health Checks
 
-## Support
+The container provides comprehensive health monitoring:
 
-If you encounter any issues or have questions, please open an issue in this repository.
+```bash
+# Container health status
+docker inspect github-fork-syncer --format='{{.State.Health.Status}}'
+
+# Detailed health logs
+docker inspect github-fork-syncer --format='{{range .State.Health.Log}}{{.Output}}{{end}}'
+```
+
+### Performance Monitoring
+
+```bash
+# Resource usage
+docker stats github-fork-syncer
+
+# Sync operation timing
+docker logs github-fork-syncer | grep "Synchronization completed"
+```
+
+## 🛡️ Security Best Practices
+
+### Token Management
+- Use environment variables for tokens
+- Rotate tokens regularly
+- Limit token scope to minimum required permissions
+- Never commit tokens to version control
+
+### Container Security
+```bash
+# Run with non-root user
+docker run --user 1000:1000 github-fork-syncer
+
+# Read-only filesystem where possible
+docker run --read-only --tmpfs /tmp github-fork-syncer
+```
+
+## 🔗 Integration Examples
+
+### CI/CD Pipeline Integration
+
+```yaml
+# GitHub Actions example
+name: Sync Forks
+on:
+  schedule:
+    - cron: '0 0 * * *'
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Sync Forks
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_USERNAMES: ${{ vars.USERNAMES }}
+        run: ./sync_forks.sh
+```
+
+### Webhook Integration
+
+```bash
+# Trigger sync via webhook
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"users":["user1","user2"]}' \
+  http://your-server/api/sync-forks
+```
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how to get started:
+
+### Development Setup
+
+```bash
+# Fork and clone
+git clone https://github.com/yourusername/github_fork_syncer.git
+cd github_fork_syncer
+
+# Create feature branch
+git checkout -b feature/your-feature
+
+# Test your changes
+./sync_forks.sh --dry-run
+```
+
+### Contribution Guidelines
+
+1. **Code Quality**: Follow existing bash scripting patterns
+2. **Testing**: Test with multiple user scenarios
+3. **Documentation**: Update README for new features
+4. **Backward Compatibility**: Maintain existing API/environment variables
+
+### Pull Request Process
+
+1. Update README.md with details of changes
+2. Ensure Docker builds successfully
+3. Test with real GitHub repositories
+4. Submit PR with clear description
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support & Community
+
+- **Issues**: [GitHub Issues](https://github.com/dynacylabs/github_fork_syncer/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/dynacylabs/github_fork_syncer/discussions)
+- **Wiki**: [Project Wiki](https://github.com/dynacylabs/github_fork_syncer/wiki)
+
+## 🔗 Related Projects
+
+- [GitHub CLI](https://cli.github.com/) - Official GitHub command line tool
+- [Hub](https://hub.github.com/) - Command line wrapper for git
+- [GitHub Sync Action](https://github.com/marketplace/actions/fork-sync) - GitHub Action for fork syncing
+
+---
+
+<p align="center">
+  <strong>Made with ❤️ by <a href="https://github.com/dynacylabs">DynacyLabs</a></strong><br>
+  <em>Automating developer workflows, one fork at a time</em>
+</p>

@@ -8,8 +8,8 @@ services:
       - example.env
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "ps", "aux", "|", "grep", "-v", "grep", "|", "grep", "crond"]
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 30s
