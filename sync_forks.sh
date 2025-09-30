@@ -219,11 +219,23 @@ process_user_forks() {
             continue
         }
 
+        # Also fetch from origin to get latest state
+        echo "Fetching latest state from origin..."
+        git fetch origin || {
+            echo "Warning: Failed to fetch from origin, continuing anyway..."
+        }
+
         # Checkout the default branch
         echo "Switching to branch: $DEFAULT_BRANCH"
         git checkout "$DEFAULT_BRANCH" || {
             echo "Failed to checkout branch $DEFAULT_BRANCH"
             continue
+        }
+
+        # Reset to match origin state to avoid conflicts
+        echo "Resetting to origin/$DEFAULT_BRANCH..."
+        git reset --hard "origin/$DEFAULT_BRANCH" || {
+            echo "Warning: Failed to reset to origin state, continuing anyway..."
         }
 
         # Merge the upstream changes
@@ -238,6 +250,13 @@ process_user_forks() {
         PUSH_OUTPUT=$(git push origin "$DEFAULT_BRANCH" 2>&1)
         PUSH_EXIT_CODE=$?
         
+        # If push failed due to reference lock, try force push
+        if [ $PUSH_EXIT_CODE -ne 0 ] && echo "$PUSH_OUTPUT" | grep -q "cannot lock ref"; then
+            echo "Detected reference lock issue, attempting force push..."
+            PUSH_OUTPUT=$(git push --force-with-lease origin "$DEFAULT_BRANCH" 2>&1)
+            PUSH_EXIT_CODE=$?
+        fi
+        
         if [ $PUSH_EXIT_CODE -eq 0 ]; then
             echo "✓ Successfully synced $REPO (user: $REPO_USERNAME)"
         else
@@ -246,6 +265,10 @@ process_user_forks() {
                 echo "⚠️ Synced $REPO but couldn't push due to workflow permissions (user: $REPO_USERNAME)"
                 echo "   (Your token needs 'workflow' scope to update .github/workflows/ files)"
                 echo "   Repository is still synced locally"
+            elif echo "$PUSH_OUTPUT" | grep -q "cannot lock ref"; then
+                echo "⚠️ Synced $REPO but couldn't push due to concurrent modifications (user: $REPO_USERNAME)"
+                echo "   This can happen when the repository is being modified during sync"
+                echo "   Repository is synced locally, will retry on next run"
             else
                 echo "❌ Failed to push changes to $REPO (user: $REPO_USERNAME)"
                 echo "   Error: $PUSH_OUTPUT"
