@@ -19,27 +19,27 @@ get_usernames() {
     # Priority 1: Command line arguments
     if [ $# -gt 0 ]; then
         usernames="$*"
-        echo "Using usernames from command line: $usernames"
+        echo "Using usernames from command line: $usernames" >&2
     # Priority 2: GITHUB_USERNAMES environment variable (comma or space separated)
     elif [ -n "${GITHUB_USERNAMES}" ]; then
         usernames=$(echo "${GITHUB_USERNAMES}" | tr ',' ' ')
-        echo "Using usernames from GITHUB_USERNAMES: $usernames"
+        echo "Using usernames from GITHUB_USERNAMES: $usernames" >&2
     # Priority 3: GITHUB_USERNAME environment variable (single user)
     elif [ -n "${GITHUB_USERNAME}" ]; then
         usernames="${GITHUB_USERNAME}"
-        echo "Using username from GITHUB_USERNAME: $usernames"
+        echo "Using username from GITHUB_USERNAME: $usernames" >&2
     # Priority 4: usernames.txt file
     elif [ -f "usernames.txt" ]; then
         usernames=$(grep -v '^#' usernames.txt | grep -v '^[[:space:]]*$' | tr '\n' ' ')
-        echo "Using usernames from usernames.txt: $usernames"
+        echo "Using usernames from usernames.txt: $usernames" >&2
     else
-        echo "Error: No usernames specified!"
-        echo ""
-        echo "Please specify usernames using one of these methods:"
-        echo "1. Command line: $0 username1 username2 username3"
-        echo "2. Environment variable: GITHUB_USERNAMES=\"user1,user2,user3\""
-        echo "3. Environment variable: GITHUB_USERNAME=\"single_user\""
-        echo "4. Create usernames.txt file with one username per line"
+        echo "Error: No usernames specified!" >&2
+        echo "" >&2
+        echo "Please specify usernames using one of these methods:" >&2
+        echo "1. Command line: $0 username1 username2 username3" >&2
+        echo "2. Environment variable: GITHUB_USERNAMES=\"user1,user2,user3\"" >&2
+        echo "3. Environment variable: GITHUB_USERNAME=\"single_user\"" >&2
+        echo "4. Create usernames.txt file with one username per line" >&2
         exit 1
     fi
     
@@ -162,7 +162,8 @@ process_user_forks() {
         if [ ! -d "$REPO_DIR" ]; then
             echo "Repository directory not found. Cloning $REPO for user $REPO_USERNAME..."
             cd "$BASE_REPO_DIR/$REPO_USERNAME"
-            git clone "https://github.com/${REPO_USERNAME}/${REPO}.git" || {
+            # Use token authentication for cloning
+            git clone "https://${GITHUB_TOKEN}@github.com/${REPO_USERNAME}/${REPO}.git" || {
                 echo "Failed to clone repository $REPO for user $REPO_USERNAME"
                 continue
             }
@@ -188,6 +189,10 @@ process_user_forks() {
             echo "Actual origin: $ORIGIN_URL"
             continue
         fi
+        
+        # Configure git to use token authentication for this repository
+        echo "Configuring git authentication..."
+        git remote set-url origin "https://${GITHUB_TOKEN}@github.com/${REPO_USERNAME}/${REPO}.git"
 
         # Add upstream remote if not already present
         echo "Checking upstream remote..."
