@@ -4,6 +4,8 @@ services:
       context: https://github.com/dynacylabs/github_fork_syncer.git
       dockerfile: Dockerfile
     container_name: github-fork-syncer
+    env_file:
+      - example.env
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "ps", "aux", "|", "grep", "-v", "grep", "|", "grep", "crond"]

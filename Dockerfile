@@ -3,12 +3,25 @@ FROM alpine:latest
 # Install Git, Cron, Curl, and jq
 RUN apk add --no-cache git curl jq
 
-# Copy the sync script into the container
+# Create necessary directories
+RUN mkdir -p /var/log /app
+
+# Copy scripts into the container
 COPY sync_forks.sh /usr/local/bin/sync_forks.sh
-RUN chmod +x /usr/local/bin/sync_forks.sh
+COPY entrypoint.sh /entrypoint.sh
 
-# Create the cron job entry
-RUN echo "* * * * * /usr/local/bin/sync_forks.sh >> /var/log/cron.log 2>&1" > /etc/crontabs/root
+# Make scripts executable
+RUN chmod +x /usr/local/bin/sync_forks.sh /entrypoint.sh
 
-# Run the command on container startup
-CMD ["sh", "-c", "echo \"$CRON_SCHEDULE /usr/local/bin/sync_forks.sh >> /var/log/cron.log 2>&1\" > /etc/crontabs/root && crontab /etc/crontabs/root && crond -f"]
+# Copy usernames.txt if it exists (optional)
+COPY usernames.txt* /app/
+
+# Set working directory
+WORKDIR /app
+
+# Set default environment variables
+ENV REPO_BASE_DIR=/app/repos
+ENV CRON_SCHEDULE="* * * * *"
+
+# Use the entrypoint script
+ENTRYPOINT ["/entrypoint.sh"]
