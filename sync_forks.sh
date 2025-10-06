@@ -6,6 +6,15 @@ if [ -z "${GITHUB_TOKEN}" ]; then
     exit 1
 fi
 
+# Configure Git identity (required for merge operations)
+GIT_USER_NAME="${GIT_USER_NAME:-GitHub Fork Syncer}"
+GIT_USER_EMAIL="${GIT_USER_EMAIL:-github-fork-syncer@users.noreply.github.com}"
+
+git config --global user.name "$GIT_USER_NAME"
+git config --global user.email "$GIT_USER_EMAIL"
+
+echo "✓ Git configured with user: $GIT_USER_NAME <$GIT_USER_EMAIL>"
+
 # Set the base directory for repositories (can be overridden by environment variable)
 BASE_REPO_DIR="${REPO_BASE_DIR:-/app/repos}"
 
