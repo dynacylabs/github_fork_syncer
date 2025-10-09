@@ -2,13 +2,13 @@
 
 # GitHub Fork Syncer Health Check Script
 # This script checks if the container is healthy by verifying:
-# 1. cron daemon is running
+# 1. Scheduler process is running
 # 2. Required environment variables are set
 # 3. Script file exists and is executable
 
-# Check if cron daemon is running
-if ! pgrep crond > /dev/null 2>&1; then
-    echo "ERROR: cron daemon is not running"
+# Check if scheduler is running
+if ! pgrep -f "scheduler.sh" > /dev/null 2>&1; then
+    echo "ERROR: scheduler process is not running"
     exit 1
 fi
 
@@ -30,16 +30,16 @@ if [ ! -x "/usr/local/bin/sync_forks.sh" ]; then
     exit 1
 fi
 
-# Check if crontab is loaded
-if ! crontab -l > /dev/null 2>&1; then
-    echo "ERROR: No crontab is loaded"
+# Check if scheduler script exists and is executable
+if [ ! -x "/usr/local/bin/scheduler.sh" ]; then
+    echo "ERROR: scheduler.sh is missing or not executable"
     exit 1
 fi
 
 # All checks passed
 echo "HEALTHY: All health checks passed"
-echo "- cron daemon: running"
+echo "- scheduler: running"
 echo "- environment: configured"
 echo "- sync script: ready"
-echo "- crontab: loaded"
+echo "- scheduler script: ready"
 exit 0

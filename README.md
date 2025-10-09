@@ -10,7 +10,7 @@ GitHub Fork Syncer automatically synchronizes your forked repositories with thei
 
 - 🔄 **Multi-branch synchronization** - Sync all branches, not just the default
 - 👥 **Multi-user support** - Manage forks across multiple GitHub accounts/organizations
-- 📅 **Configurable cron scheduling** for automated updates
+- 📅 **Configurable scheduling** with cron-like syntax (no cron daemon needed!)
 - 🐳 **Docker containerized** with health checks for reliable deployment
 - 🔍 **Smart upstream detection** using GitHub API
 - 🌿 **Intelligent branch handling** with pattern matching and conflict resolution
@@ -18,6 +18,7 @@ GitHub Fork Syncer automatically synchronizes your forked repositories with thei
 - 🛡️ **Safe operations** with force-with-lease and conflict handling
 - ⚙️ **Flexible configuration** via environment variables or files
 - 🏗️ **Auto-directory creation** and repository cloning
+- ⏰ **Simple scheduler** using sleep loops instead of cron for better container compatibility
 
 ## 🚀 Quick Start
 
@@ -41,7 +42,8 @@ Edit `.env` file with your settings:
 GITHUB_TOKEN=your_github_personal_access_token
 GITHUB_USERNAMES=user1,user2,organization1
 SYNC_MODE=all
-CRON_SCHEDULE="0 0 * * *"
+SYNC_SCHEDULE="0 0 * * *"
+RUN_ON_STARTUP=true
 ```
 
 ### 3. Deploy with Docker Compose
@@ -59,8 +61,11 @@ docker ps
 # View real-time logs
 docker logs -f github-fork-syncer
 
-# Check cron execution logs
-docker exec github-fork-syncer tail -f /var/log/cron.log
+# Check sync execution logs
+docker exec github-fork-syncer tail -f /var/log/sync.log
+
+# Check scheduler logs
+docker exec github-fork-syncer tail -f /var/log/scheduler.log
 ```
 
 ## 🎯 Branch Synchronization Modes
@@ -135,7 +140,8 @@ environment:
 | `SYNC_BRANCHES` | Branch patterns (selective mode) | `main,master,develop,dev,feature/*,release/*` | Comma-separated patterns |
 | `CREATE_NEW_BRANCHES` | Create new upstream branches | `true` | `true`, `false` |
 | `REPO_BASE_DIR` | Local repository storage path | `/app/repos` | Any valid path |
-| `CRON_SCHEDULE` | Automated sync schedule | `0 0 * * *` | Valid cron expression |
+| `SYNC_SCHEDULE` | Automated sync schedule | `0 0 * * *` | Cron-like expression |
+| `RUN_ON_STARTUP` | Run sync immediately on startup | `true` | `true`, `false` |
 
 ### Branch Pattern Examples
 
@@ -154,6 +160,23 @@ environment:
 | `"0 */6 * * *"` | Every 6 hours |
 | `"0 2 * * 1-5"` | Weekdays at 2 AM |
 | `"0 0 * * 0"` | Weekly on Sunday |
+| `"*/30 * * * *"` | Every 30 minutes |
+
+### Scheduler Configuration
+
+The scheduler uses a simple loop-based approach instead of cron for better container compatibility:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SYNC_SCHEDULE` | When to run sync (cron-like syntax) | `0 0 * * *` |
+| `RUN_ON_STARTUP` | Run sync immediately when container starts | `true` |
+
+**Benefits over cron:**
+- ✅ No cron daemon required (smaller image, fewer processes)
+- ✅ Environment variables properly passed to sync script
+- ✅ Better logging and error handling
+- ✅ Immediate feedback in container logs
+- ✅ More reliable in containerized environments
 
 ## 🐳 Docker Deployment
 
@@ -183,7 +206,8 @@ docker run -d \
   -e GITHUB_TOKEN="your_token" \
   -e GITHUB_USERNAMES="user1,user2" \
   -e SYNC_MODE="all" \
-  -e CRON_SCHEDULE="0 0 * * *" \
+  -e SYNC_SCHEDULE="0 0 * * *" \
+  -e RUN_ON_STARTUP="true" \
   -v ./repos:/app/repos \
   github-fork-syncer
 ```
@@ -244,7 +268,7 @@ curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/repos/user/r
 docker logs github-fork-syncer
 
 # Verify internal processes
-docker exec github-fork-syncer ps aux | grep cron
+docker exec github-fork-syncer ps aux | grep scheduler
 
 # Run manual health check
 docker exec github-fork-syncer /usr/local/bin/healthcheck.sh
@@ -326,6 +350,47 @@ docker run --user 1000:1000 github-fork-syncer
 # Read-only filesystem where possible
 docker run --read-only --tmpfs /tmp github-fork-syncer
 ```
+
+## ⚙️ How the Scheduler Works
+
+The GitHub Fork Syncer uses a simple, reliable scheduler implementation instead of traditional cron:
+
+### Architecture
+
+1. **No cron daemon** - The scheduler runs as a single bash process with a sleep loop
+2. **Cron-like syntax** - Uses the same schedule format you're familiar with (e.g., `0 0 * * *`)
+3. **Transparent logging** - All output goes directly to container logs
+4. **Environment-aware** - All environment variables are properly passed to the sync script
+
+### How It Works
+
+```bash
+# The scheduler:
+1. Parses cron-like expressions (e.g., "0 0 * * *")
+2. Checks every 60 seconds if the current time matches the schedule
+3. Executes sync_forks.sh when the schedule matches
+4. Logs all operations with timestamps
+5. Prevents duplicate runs in the same minute
+```
+
+### Benefits
+
+| Benefit | Description |
+|---------|-------------|
+| **Simpler** | No cron daemon to manage or debug |
+| **Reliable** | Environment variables always available |
+| **Visible** | All logs appear in `docker logs` output |
+| **Portable** | Works consistently across all platforms |
+| **Lightweight** | One less process running in the container |
+
+### Scheduler Features
+
+The scheduler supports full cron syntax:
+- **Exact times**: `0 0 * * *` (daily at midnight)
+- **Intervals**: `*/30 * * * *` (every 30 minutes)
+- **Ranges**: `0 9-17 * * *` (hourly from 9 AM to 5 PM)
+- **Lists**: `0 0,12 * * *` (at midnight and noon)
+- **Combinations**: `0 2 * * 1-5` (weekdays at 2 AM)
 
 ## 🔗 Integration Examples
 

@@ -10,10 +10,8 @@ fi
 GIT_USER_NAME="${GIT_USER_NAME:-GitHub Fork Syncer}"
 GIT_USER_EMAIL="${GIT_USER_EMAIL:-github-fork-syncer@users.noreply.github.com}"
 
-git config --global user.name "$GIT_USER_NAME"
-git config --global user.email "$GIT_USER_EMAIL"
-
-echo "✓ Git configured with user: $GIT_USER_NAME <$GIT_USER_EMAIL>"
+git config --global user.name "$GIT_USER_NAME" >/dev/null 2>&1
+git config --global user.email "$GIT_USER_EMAIL" >/dev/null 2>&1
 
 # Set the base directory for repositories (can be overridden by environment variable)
 BASE_REPO_DIR="${REPO_BASE_DIR:-/app/repos}"
@@ -30,6 +28,14 @@ CREATE_NEW_BRANCHES="${CREATE_NEW_BRANCHES:-true}"
 
 # Create the base directory if it doesn't exist
 mkdir -p "$BASE_REPO_DIR"
+
+# Global statistics
+TOTAL_REPOS=0
+TOTAL_BRANCHES_SYNCED=0
+TOTAL_BRANCHES_CREATED=0
+TOTAL_ERRORS=0
+declare -a ERRORS
+declare -a REPO_SUMMARIES
 
 # Function to check if a branch matches sync patterns
 should_sync_branch() {
@@ -68,37 +74,27 @@ sync_all_branches() {
     local default_branch="$3"
     local repo_username="$4"
     
-    echo "🔄 Starting multi-branch sync for $repo..."
+    local synced_count=0
+    local created_count=0
+    local error_count=0
+    local skipped_count=0
     
     # Get list of upstream branches
-    echo "Fetching upstream branches..."
-    UPSTREAM_BRANCHES=$(git ls-remote --heads upstream | sed 's/.*refs\/heads\///' | sort)
+    UPSTREAM_BRANCHES=$(git ls-remote --heads upstream 2>/dev/null | sed 's/.*refs\/heads\///' | sort)
     
     if [ -z "$UPSTREAM_BRANCHES" ]; then
-        echo "⚠️ No upstream branches found"
+        ERRORS+=("$repo: No upstream branches found")
         return 1
     fi
     
-    echo "Found upstream branches: $(echo "$UPSTREAM_BRANCHES" | tr '\n' ' ')"
-    
     # Get list of origin branches  
-    echo "Fetching origin branches..."
-    ORIGIN_BRANCHES=$(git ls-remote --heads origin | sed 's/.*refs\/heads\///' | sort)
-    
-    echo "Found origin branches: $(echo "$ORIGIN_BRANCHES" | tr '\n' ' ')"
-    
-    local synced_count=0
-    local created_count=0
-    local skipped_count=0
+    ORIGIN_BRANCHES=$(git ls-remote --heads origin 2>/dev/null | sed 's/.*refs\/heads\///' | sort)
     
     # Process each upstream branch
     while IFS= read -r branch; do
         if [ -z "$branch" ]; then
             continue
         fi
-        
-        echo ""
-        echo "--- Processing branch: $branch ---"
         
         # Check if branch should be synced based on mode
         local should_sync=false
@@ -120,7 +116,6 @@ sync_all_branches() {
         esac
         
         if [ "$should_sync" = false ]; then
-            echo "⏭️ Skipping branch $branch (doesn't match sync criteria)"
             ((skipped_count++))
             continue
         fi
@@ -133,80 +128,42 @@ sync_all_branches() {
         
         if [ "$branch_exists_in_origin" = true ]; then
             # Sync existing branch
-            echo "🔄 Syncing existing branch: $branch"
-            
-            # Checkout the branch
-            if git checkout "$branch" 2>/dev/null; then
-                echo "✓ Switched to branch $branch"
-            else
-                echo "📥 Creating local tracking branch for $branch"
-                git checkout -b "$branch" "origin/$branch" || {
-                    echo "❌ Failed to create local branch $branch"
-                    ((skipped_count++))
-                    continue
-                }
-            fi
-            
-            # Reset to origin state
-            echo "🔄 Resetting to origin/$branch..."
-            git reset --hard "origin/$branch" || {
-                echo "⚠️ Failed to reset to origin state"
-            }
-            
-            # Merge upstream changes
-            echo "🔄 Merging upstream/$branch..."
-            if git merge "upstream/$branch" --no-edit; then
-                echo "✅ Successfully merged upstream/$branch"
+            if git checkout "$branch" >/dev/null 2>&1 || git checkout -b "$branch" "origin/$branch" >/dev/null 2>&1; then
+                git reset --hard "origin/$branch" >/dev/null 2>&1
                 
-                # Push changes
-                echo "📤 Pushing $branch to origin..."
-                PUSH_OUTPUT=$(git push origin "$branch" 2>&1)
-                PUSH_EXIT_CODE=$?
-                
-                # Handle push conflicts
-                if [ $PUSH_EXIT_CODE -ne 0 ] && echo "$PUSH_OUTPUT" | grep -q "cannot lock ref"; then
-                    echo "🔄 Detected reference lock, attempting force push..."
-                    PUSH_OUTPUT=$(git push --force-with-lease origin "$branch" 2>&1)
-                    PUSH_EXIT_CODE=$?
-                fi
-                
-                if [ $PUSH_EXIT_CODE -eq 0 ]; then
-                    echo "✅ Successfully synced branch $branch"
-                    ((synced_count++))
+                if git merge "upstream/$branch" --no-edit >/dev/null 2>&1; then
+                    if git push origin "$branch" >/dev/null 2>&1 || git push --force-with-lease origin "$branch" >/dev/null 2>&1; then
+                        ((synced_count++))
+                    else
+                        ERRORS+=("$repo/$branch: Push failed")
+                        ((error_count++))
+                    fi
                 else
-                    echo "❌ Failed to push branch $branch: $PUSH_OUTPUT"
+                    ERRORS+=("$repo/$branch: Merge conflict")
+                    git merge --abort 2>/dev/null
+                    ((error_count++))
                 fi
             else
-                echo "❌ Failed to merge upstream/$branch (conflicts may need manual resolution)"
-                git merge --abort 2>/dev/null
-                ((skipped_count++))
+                ERRORS+=("$repo/$branch: Checkout failed")
+                ((error_count++))
             fi
-            
         else
             # Create new branch from upstream
             if [ "$CREATE_NEW_BRANCHES" = "true" ]; then
-                echo "📥 Creating new branch from upstream: $branch"
-                
-                if git checkout -b "$branch" "upstream/$branch"; then
-                    echo "✓ Created local branch $branch from upstream"
-                    
-                    # Push new branch to origin
-                    echo "📤 Pushing new branch $branch to origin..."
-                    if git push -u origin "$branch"; then
-                        echo "✅ Successfully created and pushed new branch $branch"
+                if git checkout -b "$branch" "upstream/$branch" >/dev/null 2>&1; then
+                    if git push -u origin "$branch" >/dev/null 2>&1; then
                         ((created_count++))
                     else
-                        echo "❌ Failed to push new branch $branch"
-                        # Clean up failed branch
+                        ERRORS+=("$repo/$branch: Push new branch failed")
                         git checkout "$default_branch" 2>/dev/null
                         git branch -D "$branch" 2>/dev/null
+                        ((error_count++))
                     fi
                 else
-                    echo "❌ Failed to create branch $branch from upstream"
-                    ((skipped_count++))
+                    ERRORS+=("$repo/$branch: Create branch failed")
+                    ((error_count++))
                 fi
             else
-                echo "⏭️ Skipping creation of new branch $branch (CREATE_NEW_BRANCHES=false)"
                 ((skipped_count++))
             fi
         fi
@@ -214,17 +171,31 @@ sync_all_branches() {
     done <<< "$UPSTREAM_BRANCHES"
     
     # Return to default branch
-    echo ""
-    echo "🔄 Returning to default branch: $default_branch"
-    git checkout "$default_branch" 2>/dev/null
+    git checkout "$default_branch" >/dev/null 2>&1
     
-    # Summary
-    echo ""
-    echo "📊 Branch sync summary for $repo:"
-    echo "   ✅ Synced: $synced_count branches"
-    echo "   📥 Created: $created_count branches"  
-    echo "   ⏭️ Skipped: $skipped_count branches"
-    echo "   🎯 Total processed: $((synced_count + created_count + skipped_count)) branches"
+    # Update global counters
+    TOTAL_BRANCHES_SYNCED=$((TOTAL_BRANCHES_SYNCED + synced_count))
+    TOTAL_BRANCHES_CREATED=$((TOTAL_BRANCHES_CREATED + created_count))
+    TOTAL_ERRORS=$((TOTAL_ERRORS + error_count))
+    
+    # Create summary for this repo
+    local summary="$repo: "
+    if [ $synced_count -gt 0 ]; then
+        summary+="✅ $synced_count synced"
+    fi
+    if [ $created_count -gt 0 ]; then
+        [ $synced_count -gt 0 ] && summary+=", "
+        summary+="📥 $created_count created"
+    fi
+    if [ $error_count -gt 0 ]; then
+        [ $synced_count -gt 0 ] || [ $created_count -gt 0 ] && summary+=", "
+        summary+="❌ $error_count errors"
+    fi
+    if [ $synced_count -eq 0 ] && [ $created_count -eq 0 ] && [ $error_count -eq 0 ]; then
+        summary+="⏭️  no changes"
+    fi
+    
+    REPO_SUMMARIES+=("$summary")
     
     return 0
 }
@@ -267,42 +238,34 @@ get_usernames() {
 process_user_forks() {
     local username="$1"
     echo ""
-    echo "========================================="
-    echo "Processing forks for user: $username"
-    echo "========================================="
-
-    # Get a list of your forks and their upstream sources, along with their default branch
-    echo "Fetching all repositories for user: $username"
+    echo "🔍 Processing forks for user: $username"
 
     # Get all repositories with more complete information
     API_RESPONSE=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
         "https://api.github.com/users/${username}/repos?per_page=100")
 
-    echo "API Response status check..."
     if [ -z "$API_RESPONSE" ]; then
-        echo "Error: Empty response from GitHub API for user $username"
+        ERRORS+=("$username: Empty API response")
         return 1
     fi
 
     # Check if we got an error response
     ERROR_MESSAGE=$(echo "$API_RESPONSE" | jq -r '.message // empty' 2>/dev/null)
     if [ -n "$ERROR_MESSAGE" ]; then
-        echo "GitHub API Error for user $username: $ERROR_MESSAGE"
+        ERRORS+=("$username: GitHub API Error - $ERROR_MESSAGE")
         return 1
     fi
-
-    echo "Repository count: $(echo "$API_RESPONSE" | jq '. | length' 2>/dev/null || echo "unknown")"
 
     # Get list of fork repository names
     FORK_NAMES=$(echo "$API_RESPONSE" | jq -r '.[] | select(.fork == true) | .name' 2>/dev/null)
 
     if [ -z "$FORK_NAMES" ]; then
-        echo "No fork repositories found for user: $username"
+        echo "  ℹ️  No forks found for $username"
         return 0
     fi
 
-    echo "Found fork repositories: $(echo "$FORK_NAMES" | tr '\n' ' ')"
-    echo ""
+    local fork_count=$(echo "$FORK_NAMES" | wc -l | tr -d ' ')
+    echo "  📦 Found $fork_count fork(s)"
 
     # For each fork, get detailed information including parent data
     REPOS=""
@@ -311,14 +274,13 @@ process_user_forks() {
             continue
         fi
         
-        echo "Fetching detailed info for: $REPO_NAME"
         REPO_DETAIL=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
             "https://api.github.com/repos/${username}/${REPO_NAME}")
         
         # Check if this call was successful
         DETAIL_ERROR=$(echo "$REPO_DETAIL" | jq -r '.message // empty' 2>/dev/null)
         if [ -n "$DETAIL_ERROR" ]; then
-            echo "  Error fetching details: $DETAIL_ERROR"
+            ERRORS+=("$username/$REPO_NAME: Failed to fetch details - $DETAIL_ERROR")
             continue
         fi
         
@@ -327,29 +289,19 @@ process_user_forks() {
         PARENT_DEFAULT_BRANCH=$(echo "$REPO_DETAIL" | jq -r '.parent.default_branch // empty')
         
         if [ -n "$PARENT_FULL_NAME" ] && [ "$PARENT_FULL_NAME" != "null" ]; then
-            # Use the parent's default branch, or fallback to main
             if [ -z "$PARENT_DEFAULT_BRANCH" ] || [ "$PARENT_DEFAULT_BRANCH" = "null" ]; then
                 PARENT_DEFAULT_BRANCH="main"
             fi
             
-            echo "  ✓ Found upstream: $PARENT_FULL_NAME (default branch: $PARENT_DEFAULT_BRANCH)"
             REPOS="${REPOS}${REPO_NAME} ${PARENT_FULL_NAME} ${PARENT_DEFAULT_BRANCH} ${username}\n"
-        else
-            echo "  ✗ No upstream found - may be broken fork or orphaned repository"
         fi
     done <<< "$FORK_NAMES"
 
     # Check if we found any valid forks with upstream
     if [ -z "$REPOS" ]; then
-        echo ""
-        echo "No valid fork repositories with upstream found for user: $username"
+        echo "  ⚠️  No valid forks with upstream found"
         return 0
     fi
-
-    echo ""
-    echo "Valid fork repositories with upstream for $username:"
-    echo -e "$REPOS"
-    echo "Starting synchronization process for $username..."
 
     # Loop through each repo and sync with its upstream
     echo -e "$REPOS" | while IFS= read -r line; do
@@ -363,11 +315,11 @@ process_user_forks() {
         
         # Skip if we don't have all required information
         if [ -z "$REPO" ] || [ -z "$UPSTREAM" ] || [ -z "$DEFAULT_BRANCH" ] || [ -z "$REPO_USERNAME" ]; then
-            echo "Skipping invalid repository data: '$line'"
             continue
         fi
         
-        echo "Processing fork: $REPO from upstream: $UPSTREAM, default branch: $DEFAULT_BRANCH (user: $REPO_USERNAME)"
+        echo "  🔄 Syncing $REPO..."
+        TOTAL_REPOS=$((TOTAL_REPOS + 1))
         
         # Set the repository directory path (include username to avoid conflicts)
         REPO_DIR="$BASE_REPO_DIR/$REPO_USERNAME/$REPO"
@@ -377,162 +329,105 @@ process_user_forks() {
         
         # Check if repository directory exists, if not, clone it
         if [ ! -d "$REPO_DIR" ]; then
-            echo "Repository directory not found. Cloning $REPO for user $REPO_USERNAME..."
             cd "$BASE_REPO_DIR/$REPO_USERNAME"
-            # Use token authentication for cloning
-            git clone "https://${GITHUB_TOKEN}@github.com/${REPO_USERNAME}/${REPO}.git" || {
-                echo "Failed to clone repository $REPO for user $REPO_USERNAME"
+            if ! git clone "https://${GITHUB_TOKEN}@github.com/${REPO_USERNAME}/${REPO}.git" >/dev/null 2>&1; then
+                ERRORS+=("$REPO: Clone failed")
+                TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
                 continue
-            }
+            fi
         fi
         
         # Navigate to the repository directory
         cd "$REPO_DIR" || { 
-            echo "Failed to navigate to repository directory: $REPO_DIR"
+            ERRORS+=("$REPO: Cannot access directory")
+            TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
             continue
         }
         
         # Verify this is actually a git repository
         if [ ! -d ".git" ]; then
-            echo "Error: $REPO_DIR is not a git repository"
-            continue
-        fi
-        
-        # Double-check that this repository is actually a fork by checking remotes
-        ORIGIN_URL=$(git remote get-url origin 2>/dev/null || echo "")
-        if [[ ! "$ORIGIN_URL" =~ github\.com[/:]${REPO_USERNAME}/${REPO}(\.git)?$ ]]; then
-            echo "Warning: Origin URL doesn't match expected fork URL for $REPO"
-            echo "Expected pattern: github.com/${REPO_USERNAME}/${REPO}"
-            echo "Actual origin: $ORIGIN_URL"
+            ERRORS+=("$REPO: Not a git repository")
+            TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
             continue
         fi
         
         # Configure git to use token authentication for this repository
-        echo "Configuring git authentication..."
-        git remote set-url origin "https://${GITHUB_TOKEN}@github.com/${REPO_USERNAME}/${REPO}.git"
+        git remote set-url origin "https://${GITHUB_TOKEN}@github.com/${REPO_USERNAME}/${REPO}.git" 2>/dev/null
 
         # Add upstream remote if not already present
-        echo "Checking upstream remote..."
         if git remote get-url upstream &> /dev/null; then
             EXISTING_UPSTREAM=$(git remote get-url upstream)
-            echo "Upstream remote already exists: $EXISTING_UPSTREAM"
             EXPECTED_UPSTREAM="https://github.com/$UPSTREAM"
             if [ "$EXISTING_UPSTREAM" != "$EXPECTED_UPSTREAM" ]; then
-                echo "Updating upstream remote from $EXISTING_UPSTREAM to $EXPECTED_UPSTREAM"
-                git remote set-url upstream "$EXPECTED_UPSTREAM"
+                git remote set-url upstream "$EXPECTED_UPSTREAM" 2>/dev/null
             fi
         else
-            echo "Adding upstream remote: https://github.com/$UPSTREAM"
-            git remote add upstream "https://github.com/$UPSTREAM" || {
-                echo "Failed to add upstream remote"
+            if ! git remote add upstream "https://github.com/$UPSTREAM" 2>/dev/null; then
+                ERRORS+=("$REPO: Failed to add upstream remote")
+                TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
                 continue
-            }
+            fi
         fi
 
         # Fetch upstream changes
-        echo "Fetching from upstream..."
-        git fetch upstream || {
-            echo "Failed to fetch from upstream"
+        if ! git fetch upstream >/dev/null 2>&1; then
+            ERRORS+=("$REPO: Failed to fetch upstream")
+            TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
             continue
-        }
+        fi
 
         # Also fetch from origin to get latest state
-        echo "Fetching latest state from origin..."
-        git fetch origin || {
-            echo "Warning: Failed to fetch from origin, continuing anyway..."
-        }
+        git fetch origin >/dev/null 2>&1
 
         # Sync branches based on configured mode
-        echo ""
-        echo "🌟 Starting branch synchronization (mode: $SYNC_MODE)..."
         case "$SYNC_MODE" in
             "default")
-                echo "📌 Syncing only default branch: $DEFAULT_BRANCH"
                 # Use original single-branch sync logic for default mode
-                git checkout "$DEFAULT_BRANCH" || {
-                    echo "Failed to checkout branch $DEFAULT_BRANCH"
-                    continue
-                }
-                
-                git reset --hard "origin/$DEFAULT_BRANCH" || {
-                    echo "Warning: Failed to reset to origin state, continuing anyway..."
-                }
-                
-                git merge "upstream/$DEFAULT_BRANCH" || {
-                    echo "Failed to merge upstream changes"
-                    continue
-                }
-                
-                PUSH_OUTPUT=$(git push origin "$DEFAULT_BRANCH" 2>&1)
-                PUSH_EXIT_CODE=$?
-                
-                if [ $PUSH_EXIT_CODE -ne 0 ] && echo "$PUSH_OUTPUT" | grep -q "cannot lock ref"; then
-                    echo "Detected reference lock issue, attempting force push..."
-                    PUSH_OUTPUT=$(git push --force-with-lease origin "$DEFAULT_BRANCH" 2>&1)
-                    PUSH_EXIT_CODE=$?
+                if git checkout "$DEFAULT_BRANCH" >/dev/null 2>&1; then
+                    git reset --hard "origin/$DEFAULT_BRANCH" >/dev/null 2>&1
+                    
+                    if git merge "upstream/$DEFAULT_BRANCH" --no-edit >/dev/null 2>&1; then
+                        if git push origin "$DEFAULT_BRANCH" >/dev/null 2>&1 || git push --force-with-lease origin "$DEFAULT_BRANCH" >/dev/null 2>&1; then
+                            TOTAL_BRANCHES_SYNCED=$((TOTAL_BRANCHES_SYNCED + 1))
+                            REPO_SUMMARIES+=("$REPO: ✅ 1 synced")
+                        else
+                            ERRORS+=("$REPO/$DEFAULT_BRANCH: Push failed")
+                            TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+                        fi
+                    else
+                        ERRORS+=("$REPO/$DEFAULT_BRANCH: Merge conflict")
+                        git merge --abort 2>/dev/null
+                        TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+                    fi
+                else
+                    ERRORS+=("$REPO/$DEFAULT_BRANCH: Checkout failed")
+                    TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
                 fi
                 ;;
             "all"|"selective")
-                echo "🔄 Syncing multiple branches..."
                 sync_all_branches "$REPO" "$UPSTREAM" "$DEFAULT_BRANCH" "$REPO_USERNAME"
-                PUSH_EXIT_CODE=$?
                 ;;
         esac
         
-        # Report results
-        if [ $PUSH_EXIT_CODE -eq 0 ]; then
-            case "$SYNC_MODE" in
-                "default")
-                    echo "✓ Successfully synced $REPO (user: $REPO_USERNAME)"
-                    ;;
-                "all"|"selective")
-                    echo "✅ Successfully completed multi-branch sync for $REPO (user: $REPO_USERNAME)"
-                    ;;
-            esac
-        else
-            case "$SYNC_MODE" in
-                "default")
-                    # Check if it's a workflow permission issue
-                    if echo "$PUSH_OUTPUT" | grep -q "workflow.*scope"; then
-                        echo "⚠️ Synced $REPO but couldn't push due to workflow permissions (user: $REPO_USERNAME)"
-                        echo "   (Your token needs 'workflow' scope to update .github/workflows/ files)"
-                        echo "   Repository is still synced locally"
-                    elif echo "$PUSH_OUTPUT" | grep -q "cannot lock ref"; then
-                        echo "⚠️ Synced $REPO but couldn't push due to concurrent modifications (user: $REPO_USERNAME)"
-                        echo "   This can happen when the repository is being modified during sync"
-                        echo "   Repository is synced locally, will retry on next run"
-                    else
-                        echo "❌ Failed to push changes to $REPO (user: $REPO_USERNAME)"
-                        echo "   Error: $PUSH_OUTPUT"
-                    fi
-                    ;;
-                "all"|"selective")
-                    echo "⚠️ Multi-branch sync completed with some issues for $REPO (user: $REPO_USERNAME)"
-                    echo "   Check the detailed output above for specific branch results"
-                    ;;
-            esac
-        fi
-        echo ""
     done
-    
-    echo "Completed processing forks for user: $username"
 }
 
 # Main script execution
-echo "GitHub Fork Syncer - Multi-User Support"
-echo "======================================="
+echo "=========================================="
+echo "🔄 GitHub Fork Syncer"
+echo "=========================================="
 
 # Get list of usernames to process
 USERNAMES=$(get_usernames "$@")
 
 if [ -z "$USERNAMES" ]; then
-    echo "No usernames to process"
+    echo "❌ No usernames to process"
     exit 1
 fi
 
-echo ""
-echo "Will process forks for users: $USERNAMES"
-echo ""
+echo "👥 Users: $USERNAMES"
+echo "📋 Mode: $SYNC_MODE"
+echo "=========================================="
 
 # Process each username
 for USERNAME in $USERNAMES; do
@@ -540,6 +435,39 @@ for USERNAME in $USERNAMES; do
 done
 
 echo ""
-echo "========================================="
-echo "Fork synchronization completed for all users"
-echo "========================================="
+echo "=========================================="
+echo "📊 SYNC SUMMARY"
+echo "=========================================="
+
+# Display repo summaries
+if [ ${#REPO_SUMMARIES[@]} -gt 0 ]; then
+    echo ""
+    echo "Repository Updates:"
+    for summary in "${REPO_SUMMARIES[@]}"; do
+        echo "  $summary"
+    done
+fi
+
+# Display statistics
+echo ""
+echo "Statistics:"
+echo "  📦 Repositories processed: $TOTAL_REPOS"
+echo "  ✅ Branches synced: $TOTAL_BRANCHES_SYNCED"
+echo "  📥 Branches created: $TOTAL_BRANCHES_CREATED"
+echo "  ❌ Errors: $TOTAL_ERRORS"
+
+# Display errors if any
+if [ ${#ERRORS[@]} -gt 0 ]; then
+    echo ""
+    echo "Errors:"
+    for error in "${ERRORS[@]}"; do
+        echo "  ❌ $error"
+    done
+    echo ""
+    echo "=========================================="
+    exit 1
+else
+    echo ""
+    echo "✅ All operations completed successfully!"
+    echo "=========================================="
+fi
