@@ -113,15 +113,7 @@ GITHUB_USERNAME="dynacylabs"
 ./sync_forks.sh user1 user2 user3
 ```
 
-### Method 3: usernames.txt File
-```txt
-# Add one username per line
-dynacylabs
-octocat
-myorganization
-```
-
-### Method 4: Docker Compose
+### Method 3: Docker Compose
 ```yaml
 environment:
   - GITHUB_USERNAMES=user1,user2,user3

@@ -15,9 +15,6 @@ COPY healthcheck.sh /usr/local/bin/healthcheck.sh
 # Make scripts executable
 RUN chmod +x /usr/local/bin/sync_forks.sh /usr/local/bin/scheduler.sh /entrypoint.sh /usr/local/bin/healthcheck.sh
 
-# Copy usernames.txt if it exists (optional)
-COPY usernames.txt* /app/
-
 # Set working directory
 WORKDIR /app
 

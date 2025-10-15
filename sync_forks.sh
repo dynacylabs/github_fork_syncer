@@ -216,10 +216,6 @@ get_usernames() {
     elif [ -n "${GITHUB_USERNAME}" ]; then
         usernames="${GITHUB_USERNAME}"
         echo "Using username from GITHUB_USERNAME: $usernames" >&2
-    # Priority 4: usernames.txt file
-    elif [ -f "usernames.txt" ]; then
-        usernames=$(grep -v '^#' usernames.txt | grep -v '^[[:space:]]*$' | tr '\n' ' ')
-        echo "Using usernames from usernames.txt: $usernames" >&2
     else
         echo "Error: No usernames specified!" >&2
         echo "" >&2
@@ -227,7 +223,6 @@ get_usernames() {
         echo "1. Command line: $0 username1 username2 username3" >&2
         echo "2. Environment variable: GITHUB_USERNAMES=\"user1,user2,user3\"" >&2
         echo "3. Environment variable: GITHUB_USERNAME=\"single_user\"" >&2
-        echo "4. Create usernames.txt file with one username per line" >&2
         exit 1
     fi
     

@@ -19,8 +19,8 @@ if [ -z "$GITHUB_TOKEN" ]; then
 fi
 
 # Check if we have at least one username configured
-if [ -z "$GITHUB_USERNAME" ] && [ -z "$GITHUB_USERNAMES" ] && [ ! -f "/app/usernames.txt" ]; then
-    echo "ERROR: No usernames configured (GITHUB_USERNAME, GITHUB_USERNAMES, or usernames.txt)"
+if [ -z "$GITHUB_USERNAME" ] && [ -z "$GITHUB_USERNAMES" ]; then
+    echo "ERROR: No usernames configured (GITHUB_USERNAME or GITHUB_USERNAMES)"
     exit 1
 fi
 
